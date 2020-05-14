@@ -1,0 +1,446 @@
+TABLEs
+============================
+CREATE TABLE signin(email VARCHAR2(50) CONSTRAINT pk_email PRIMARY KEY,password VARCHAR2(20) NOT NULL);
+
+CREATE TABLE customer(email VARCHAR2(50),name VARCHAR2(50) NOT NULL,ph_no VARCHAR2(10) NOT NULL, address VARCHAR2(100) NOT NULL,CONSTRAINT fk_email FOREIGN KEY (email) REFERENCES signin(email));
+
+CREATE TABLE category(cat_id INT CONSTRAINT pk2_email PRIMARY KEY, cat_name  VARCHAR2(50) NOT NULL UNIQUE);
+
+CREATE TABLE product(prod_id INT CONSTRAINT pk3_email PRIMARY KEY,
+					 cat_id INT,
+					 prod_name VARCHAR2(50) UNIQUE,
+					 price INT,
+					 quantity INT,
+					 CONSTRAINT fk2_email FOREIGN KEY (cat_id) REFERENCES category(cat_id));
+
+CREATE TABLE shoppingcart(email VARCHAR2(50),prod_id INT,
+prod_name VARCHAR2(50),
+price INT ,quantity INT,
+CONSTRAINT pk_shop PRIMARY KEY(email,prod_id),
+CONSTRAINT fk_emailshop FOREIGN KEY (email) REFERENCES signin(email),
+CONSTRAINT fk2_prodid FOREIGN KEY (prod_id) REFERENCES product(prod_id));
+
+CREATE TABLE placeorder(order_id INT,
+		email VARCHAR2(50),
+		name VARCHAR2(50),
+		city VARCHAR2(50),
+		address VARCHAR2(100),
+		ph_no VARCHAR2(10),
+		CONSTRAINT pk5_ord PRIMARY KEY(order_id));
+
+
+CREATE TABLE orderdetails(order_id INT, prod_id INT,
+	email VARCHAR2(50),
+	prod_name VARCHAR2(50),
+	price INT,
+	quantity INT,
+	totalprice INT,
+	CONSTRAINT pkk_ord PRIMARY KEY(order_id,prod_id),
+	CONSTRAINT fkk_ord FOREIGN KEY(order_id) REFERENCES placeorder(order_id));
+
+CREATE TABLE payment(pay_id INT,order_id INT,pay_type VARCHAR2(50) ,totalprice INT,
+CONSTRAINT pkk_pay PRIMARY KEY(pay_id),
+CONSTRAINT fkk_pay FOREIGN KEY (order_id) REFERENCES placeorder(order_id) );
+
+=======================
+PROCEDURE
+========================
+------
+CREATE OR REPLACE PROCEDURE create_user(mail IN signin.email%TYPE,pass IN signin.password%TYPE, result OUT INT) AS
+BEGIN
+	INSERT INTO signin(email,password) VALUES(mail,pass);
+	COMMIT;
+	result := 1;
+	exception
+	WHEN others THEN
+	result := 0;
+	ROLLBACK;
+END;
+/
+------
+CREATE OR REPLACE PROCEDURE add_user(mail IN customer.email%TYPE,uname IN customer.name%TYPE,phone IN customer.ph_no%TYPE,add IN customer.address%TYPE, result OUT INT) AS
+BEGIN
+	INSERT INTO customer(email,name,ph_no,address) VALUES(mail,uname,phone,add);
+	COMMIT;
+	result := 1;
+	exception
+	WHEN others THEN
+	result := 0;
+	ROLLBACK;
+END;
+/
+------
+CREATE OR REPLACE PROCEDURE check_user(mail IN signin.email%TYPE,pass IN signin.password%TYPE, result OUT VARCHAR2) AS
+BEGIN
+	SELECT email INTO result FROM signin WHERE email=mail AND password=pass;
+	exception
+	WHEN NO_DATA_FOUND THEN
+	result := 'USER ID AND PASSWORD INCORRECT';
+END;
+/
+-----
+CREATE OR REPLACE PROCEDURE get_details(mail IN signin.email%TYPE,uname OUT VARCHAR2,phone OUT VARCHAR2,adr OUT VARCHAR2,pwd OUT VARCHAR2) AS
+BEGIN
+	SELECT name,ph_no,address INTO uname,phone,adr FROM customer WHERE email=mail;
+	SELECT password INTO pwd FROM signin WHERE email=mail;
+	exception
+	WHEN others THEN
+	ROLLBACK;
+END;
+/
+-----
+
+CREATE OR REPLACE PROCEDURE update_details(mail IN signin.email%TYPE, uname IN customer.name%TYPE, phone IN customer.ph_no%TYPE, adr IN customer.address%TYPE, pwd IN signin.password%TYPE, result OUT INT) AS
+BEGIN
+	UPDATE customer SET name=uname, ph_no=phone,address=adr WHERE email=mail;
+	UPDATE signin SET password=pwd WHERE email=mail;
+	result:=1;
+	exception
+	WHEN others THEN
+	result:=0;
+	ROLLBACK;
+END;
+/
+------
+CREATE OR REPLACE PROCEDURE add_product (
+	    prod_name      IN   product.prod_name%TYPE,
+	    price          IN   product.price%TYPE,
+	    quantity	   IN   product.quantity%TYPE,
+		catt_name      IN   category.cat_name%TYPE,result OUT INT
+	) AS
+		cursor c_name IS SELECT cat_id FROM category WHERE cat_name = catt_name;
+		r_name c_name%ROWTYPE;
+	BEGIN
+		OPEN c_name;
+		LOOP
+			FETCH c_name INTO r_name;
+			IF c_name%NOTfound THEN
+	                    INSERT INTO category VALUES(dept_seq.nextval,catt_name);
+	                ELSE
+		INSERT INTO product(prod_id,cat_id,prod_name,price,quantity) VALUES (
+	        prod_seq.nextval,
+	        r_name.cat_id,
+	        prod_name,
+	        price,
+		quantity
+	        );
+	END IF;
+	exit;
+	END LOOP;
+	CLOSE c_name;
+	COMMIT;
+	result := 1;
+	exception
+	WHEN others THEN
+	result := 0;
+	ROLLBACK;
+END add_product;
+/
+
+--------------------------
+create or replace procedure add_cart(prodname in product.prod_name%TYPE,email in signin.email%TYPE,quantity in product.quantity%TYPE,result out int) as
+cursor c_prodid is select * from product where prod_name=prodname;
+r_prodid c_prodid%rowtype;
+begin
+open c_prodid;
+    loop
+    fetch c_prodid into r_prodid;
+    if c_prodid%notfound then
+        result:=0;
+    exit;
+    else
+      insert into shoppingcart(email,prod_id,prod_name,price,quantity) values(email,r_prodid.prod_id,prodname,r_prodid.price*quantity,quantity);
+      result:=1;
+      exit;
+    end if;
+end loop;
+close c_prodid;
+end;
+/
+
+-----
+CREATE OR REPLACE PROCEDURE resetcart(emailin IN signin.email%TYPE,result OUT INT) AS
+BEGIN
+	DELETE FROM shoppingcart WHERE email=emailin;
+	result:=1;
+	exception
+	WHEN others THEN
+	result:=0;
+	ROLLBACK;
+END;
+/
+-----
+
+CREATE OR REPLACE PROCEDURE getcart_details(emailin IN shoppingcart.email%TYPE, cart_details OUT SYS_REFCURSOR) AS
+BEGIN
+	OPEN cart_details for SELECT prod_name,price,quantity FROM shoppingcart WHERE email=emailin;
+END;
+/
+-----
+CREATE OR REPLACE PROCEDURE getproduct_details(catname IN category.cat_name%TYPE, prod_details OUT SYS_REFCURSOR) AS
+BEGIN
+	OPEN prod_details for SELECT prod_name,price FROM product WHERE cat_id=(SELECT cat_id FROM category WHERE cat_name=catname);
+END;
+/
+----
+
+CREATE OR REPLACE PROCEDURE getuser_details(user_details OUT     SYS_REFCURSOR) AS
+BEGIN
+	OPEN user_details for SELECT * FROM signin join customer on signin.email=customer.email;
+END;
+/
+----
+CREATE OR REPLACE PROCEDURE addyourorder(orderid IN INT,emailid IN signin.email%TYPE, tprice IN INT, result OUT INT) AS
+cursor c_addorder IS SELECT * FROM shoppingcart WHERE email = emailid;
+r_addorder c_addorder%ROWTYPE;
+BEGIN
+OPEN c_addorder;
+LOOP
+  FETCH c_addorder INTO r_addorder;
+    IF c_addorder%NOTfound THEN
+    exit;
+    ELSE
+      INSERT INTO orderdetails(order_id,prod_id,email,prod_name,price,quantity,totalprice) VALUES(orderid,r_addorder.prod_id,emailid,r_addorder.prod_name,r_addorder.price,r_addorder.quantity,tprice);
+			result:=1;
+    END IF;
+END LOOP;
+CLOSE c_addorder;
+exception
+WHEN others THEN
+result:=0;
+ROLLBACK;
+END;
+/
+----
+
+CREATE OR REPLACE PROCEDURE orderplace(orderid IN INT,emailid IN placeorder.email%TYPE,add IN placeorder.address%TYPE,phnnumber IN placeorder.ph_no%TYPE,name IN customer.name%TYPE, city IN VARCHAR2, result OUT INT) AS
+BEGIN
+  INSERT INTO placeorder VALUES(orderid,emailid,name,city,add,phnnumber);
+	result:=1;
+	exception
+	WHEN others THEN
+	result:=0;
+END;
+/
+------
+
+CREATE OR REPLACE PROCEDURE getorder_id (mail IN signin.email%TYPE,ord_id OUT sys_refcursor) AS
+BEGIN
+OPEN ord_id for SELECT order_id FROM placeorder WHERE email=mail;
+END;
+/
+----
+CREATE OR REPLACE PROCEDURE disorder (mail IN signin.email%TYPE,cnt OUT INT) AS
+BEGIN
+SELECT DISTINCT COUNT(order_id) INTO cnt FROM placeorder WHERE email=mail;
+END;
+/
+----
+CREATE OR REPLACE PROCEDURE getinvoice(ordid IN INT,get_inv OUT sys_refcursor) AS
+BEGIN
+OPEN get_inv for SELECT * FROM orderdetails WHERE order_id=ordid;
+END;
+/
+----
+
+CREATE OR REPLACE PROCEDURE ordidcnt(ordid IN INT,cnt OUT INT) AS
+BEGIN
+SELECT COUNT(order_id) INTO cnt FROM orderdetails WHERE order_id=ordid;
+END;
+/
+-----
+CREATE OR REPLACE PROCEDURE getallorders(allorder OUT sys_refcursor) AS
+BEGIN
+OPEN allorder for SELECT * FROM orderdetails;
+END;
+/
+------
+CREATE OR REPLACE PROCEDURE getuserorders(mail IN signin.email%TYPE,allorder OUT sys_refcursor) AS
+BEGIN
+OPEN allorder for SELECT * FROM orderdetails WHERE email=mail;
+END;
+/
+---
+CREATE OR REPLACE PROCEDURE add_pay(ord_id IN INT,paytype IN VARCHAR,tprice IN INT, result OUT INT) AS
+BEGIN
+INSERT INTO payment(pay_id,order_id,pay_type,totalprice) VALUES(pay_seq.nextval,ord_id,paytype,tprice);
+END;
+/
+-------
+CREATE OR REPLACE PROCEDURE getpaydetails(ord_id IN INT,paytype OUT VARCHAR, tprice OUT INT) AS
+BEGIN
+	SELECT pay_type,totalprice INTO paytype,tprice FROM payment WHERE order_id=ord_id;
+END;
+/
+=================
+Triggers
+===================
+CREATE SEQUENCE dept_seq START WITH 1;
+
+CREATE OR REPLACE TRIGGER cat_bir
+BEFORE INSERT ON category
+FOR EACH ROW
+BEGIN
+  SELECT dept_seq.NEXTVAL
+  INTO   :new.cat_id
+  FROM   dual;
+END;
+/
+-------------
+CREATE SEQUENCE prod_seq START WITH 1;
+
+
+CREATE OR REPLACE TRIGGER prod_bir
+BEFORE INSERT ON product
+FOR EACH ROW
+BEGIN
+  SELECT prod_seq.NEXTVAL
+  INTO   :new.prod_id
+  FROM   dual;
+END;
+/
+---------------------
+CREATE SEQUENCE pay_seq START WITH 1;
+
+
+CREATE OR REPLACE TRIGGER pay_bir
+BEFORE INSERT ON payment
+FOR EACH ROW
+BEGIN
+  SELECT pay_seq.NEXTVAL
+  INTO   :new.pay_id
+  FROM   dual;
+END;
+/
+---------------------------
+CREATE SEQUENCE ord_seq START WITH 1;
+
+
+CREATE OR REPLACE TRIGGER ord_bir
+BEFORE INSERT ON placeorder
+FOR EACH ROW
+BEGIN
+  SELECT ord_seq.NEXTVAL
+  INTO   :new.order_id
+  FROM   dual;
+END;
+/
+-------
+CREATE OR REPLACE TRIGGER check_signin
+BEFORE INSERT ON signin
+FOR EACH ROW
+DECLARE
+     prefix VARCHAR2(1);
+     CURSOR cu_signin IS SELECT * FROM signin;            
+BEGIN 
+FOR r_signin IN cu_signin LOOP            
+        IF(r_signin.email = :new.email) THEN
+           dbms_output.Put_line('Username already exists....Try aNOTher one.');
+           Raise_Application_Error (-20001, 'Duplicate username found');
+        END IF;
+END LOOP;
+   
+prefix := substr(:new.password,1,1);
+IF(LENGTH(:new.password) != 8) THEN
+    dbms_output.Put_line('The length of the password must be 8 characters');
+    Raise_Application_Error (-20002, 'Password Length must be 8');
+END IF;
+IF( (REGEXP_LIKE(prefix, '[a-z]')) OR (REGEXP_LIKE(prefix, '[0-9]')) OR (REGEXP_LIKE(prefix, '[A-Z]'))) THEN
+    dbms_output.Put_line('The first letter of the password must be special character');
+    Raise_Application_Error (-20004, 'first letter of the password must be special character');
+END IF;
+END;
+/
+------------------------
+CREATE OR REPLACE TRIGGER check_customer
+BEFORE INSERT ON customer
+FOR EACH ROW
+DECLARE
+     prefix VARCHAR2(1);
+     CURSOR cu_cus IS SELECT * FROM customer;            
+BEGIN 
+FOR r_cus IN cu_cus LOOP            
+        IF(r_cus.email = :new.email) THEN
+           dbms_output.Put_line('Username already exists....Try aNOTher one.');
+           Raise_Application_Error (-20001, 'Duplicate username found');
+        END IF;
+END LOOP;
+   
+IF(LENGTH(:new.ph_no) != 10) THEN
+    dbms_output.Put_line('The length of the phone number must be 10');
+    Raise_Application_Error (-20003, 'Phone number must be size of 10');
+END IF;
+END;
+/
+-----
+CREATE OR REPLACE TRIGGER quan_sub BEFORE INSERT ON orderdetails
+FOR EACH ROW
+DECLARE
+cursor c_quan IS SELECT quantity FROM product WHERE prod_name = :new.prod_name;
+r_quan c_quan%rowtype;
+BEGIN
+OPEN c_quan;
+  FETCH c_quan INTO r_quan;
+  IF (r_quan.quantity<:new.quantity) THEN
+    raise_application_error(-20001,'Enough quantity not available');
+  ELSE
+    UPDATE product SET quantity =(r_quan.quantity - :new.quantity) WHERE prod_name = :new.prod_name;
+  END IF;
+CLOSE c_quan;
+END;
+/
+-------
+CREATE OR REPLACE TRIGGER check_quan BEFORE INSERT ON shoppingcart 
+FOR EACH ROW
+DECLARE
+cursor c_quan IS SELECT quantity FROM product WHERE prod_name = :new.prod_name;
+r_quan c_quan%rowtype;
+BEGIN
+OPEN c_quan;
+LOOP
+FETCH c_quan INTO r_quan;
+IF c_quan%notfound THEN
+exit;
+ELSE
+    IF (r_quan.quantity<:new.quantity) THEN
+      raise_application_error(-20001,'Enough quantity not available');
+END IF;
+END IF;
+END LOOP;
+CLOSE c_quan;
+END;
+/
+-----
+CREATE OR REPLACE TRIGGER CHECK_PH
+BEFORE INSERT ON placeorder
+FOR EACH ROW
+DECLARE          
+BEGIN 
+IF(LENGTH(:new.ph_no) != 10) THEN
+    dbms_output.Put_line('The length of the phone number must be 10');
+    Raise_Application_Error (-20003, 'Phone number must be size of 10');
+END IF;
+END;
+/
+===========================
+Functions
+=============================
+
+CREATE OR REPLACE FUNCTION tot_amt(shopemail IN shoppingcart.email%TYPE) RETURN INT AS tot_amt INT;
+cursor c_shop IS SELECT price,quantity FROM shoppingcart WHERE email = shopemail;
+r_shop c_shop%ROWTYPE;
+BEGIN
+tot_amt:=0;
+OPEN c_shop;
+LOOP
+FETCH c_shop INTO r_shop;
+IF c_shop%NOTfound THEN
+exit;
+ELSE
+	tot_amt:=tot_amt+(r_shop.price*r_shop.quantity);
+END IF;
+END LOOP;
+CLOSE c_shop;
+RETURN tot_amt;
+END;
+/
